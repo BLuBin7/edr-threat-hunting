@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: edr-system
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: VictoriaMetrics
+      type: prometheus
+      access: proxy
+      url: http://victoria-metrics:8428
+      isDefault: true
+      editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-edr
+  namespace: edr-system
+data:
+  edr-overview.json: |
+    {
+      "dashboard": {
+        "title": "EDR Threat Hunting - Overview",
+        "panels": [
+          {
+            "title": "Events Processed (rate)",
+            "targets": [{"expr": "rate(edr_agent_events_processed_total[5m])"}]
+          },
+          {
+            "title": "Alerts by Severity",
+            "targets": [{"expr": "sum by (severity) (edr_agent_alerts_generated_total)"}]
+          },
+          {
+            "title": "ML Inference Latency (P95)",
+            "targets": [{"expr": "histogram_quantile(0.95, edr_agent_ml_inference_latency_seconds)"}]
+          },
+          {
+            "title": "Agent Memory Usage",
+            "targets": [{"expr": "edr_agent_memory_usage_mb"}]
+          }
+        ]
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: edr-system
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.2
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin  # Change in production!
+        - name: GF_INSTALL_PLUGINS
+          value: ""
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboard-edr
+          mountPath: /var/lib/grafana/dashboards
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboards-config
+        configMap:
+          name: grafana-dashboards-config
+      - name: dashboard-edr
+        configMap:
+          name: grafana-dashboard-edr
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  namespace: edr-system
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+    - name: 'EDR Dashboards'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      updateIntervalSeconds: 10
+      options:
+        path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: edr-system
+  labels:
+    app: grafana
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    nodePort: 30300  # Access via http://<node-ip>:30300
+    protocol: TCP

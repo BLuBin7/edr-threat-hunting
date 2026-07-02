@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: victoria-metrics-data
+  namespace: edr-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard  # Adjust based on your cluster
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoria-metrics
+  namespace: edr-system
+  labels:
+    app: victoria-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victoria-metrics
+  template:
+    metadata:
+      labels:
+        app: victoria-metrics
+    spec:
+      containers:
+      - name: victoria-metrics
+        image: victoriametrics/victoria-metrics:v1.93.4
+        args:
+          - --storageDataPath=/victoria-metrics-data
+          - --retentionPeriod=7d
+          - --httpListenAddr=:8428
+        ports:
+        - name: http
+          containerPort: 8428
+          protocol: TCP
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: data
+          mountPath: /victoria-metrics-data
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8428
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8428
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: victoria-metrics-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoria-metrics
+  namespace: edr-system
+  labels:
+    app: victoria-metrics
+spec:
+  type: ClusterIP
+  selector:
+    app: victoria-metrics
+  ports:
+  - name: http
+    port: 8428
+    targetPort: 8428
+    protocol: TCP

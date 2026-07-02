@@ -1,0 +1,54 @@
+agent:
+  hostname: ""  # Auto-detected
+  node_name: ""  # Auto-detected
+  environment: production
+
+monitors:
+  process:
+    poll_interval: 1s
+    track_lineage: true
+
+  file:
+    recursive: true
+    watch_paths:
+      - /etc/passwd
+      - /etc/shadow
+      - /etc/sudoers
+      - /root/.ssh
+      - /home/*/.ssh
+      - /etc/cron.d
+      - /var/spool/cron
+
+  network:
+    poll_interval: 5s
+    track_dns: true
+
+  persistence:
+    watch_cron: true
+    watch_systemd: true
+    watch_autorun: true
+
+correlation:
+  window_size: 30m
+  max_memory_mb: 100
+
+scoring:
+  rarity_weight: 0.3
+  sequence_weight: 0.4
+  ml_weight: 0.3
+  threshold: 0.7
+
+ml:
+  model_path: /etc/edr-agent/model.onnx
+  enable_inference: true
+  fallback_on_error: true
+
+metrics:
+  enabled: true
+  port: 9090
+
+output:
+  victoria_metrics:
+    enabled: false
+    endpoint: http://victoria-metrics:8428/api/v1/write
+  log_file: /var/log/edr-agent/agent.log

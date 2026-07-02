@@ -1,0 +1,261 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edr-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edr-agent-config
+  namespace: edr-system
+data:
+  config.yaml: |
+    agent:
+      hostname: ""  # Auto-detected
+      node_name: ""  # Auto-detected from K8s
+      environment: production
+
+    monitors:
+      process:
+        poll_interval: 1s
+        track_lineage: true
+
+      file:
+        recursive: true
+        watch_paths:
+          - /etc/passwd
+          - /etc/shadow
+          - /etc/sudoers
+          - /root/.ssh
+          - /home/*/.ssh
+          - /etc/cron.d
+
+      network:
+        poll_interval: 5s
+        track_dns: true
+
+      persistence:
+        watch_cron: true
+        watch_systemd: true
+        watch_autorun: true
+
+    correlation:
+      window_size: 30m
+      max_memory_mb: 100
+
+    scoring:
+      rarity_weight: 0.3
+      sequence_weight: 0.4
+      ml_weight: 0.3
+      threshold: 0.7
+
+    ml:
+      model_path: /etc/edr-agent/model.onnx
+      enable_inference: true
+      fallback_on_error: true
+
+    metrics:
+      enabled: true
+      port: 9090
+
+    output:
+      victoria_metrics:
+        enabled: true
+        endpoint: http://victoria-metrics.edr-system.svc.cluster.local:8428/api/v1/write
+      log_file: /var/log/edr-agent/agent.log
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: edr-agent
+  namespace: edr-system
+  labels:
+    app: edr-agent
+    component: sensor
+spec:
+  selector:
+    matchLabels:
+      app: edr-agent
+  template:
+    metadata:
+      labels:
+        app: edr-agent
+        component: sensor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+
+      serviceAccountName: edr-agent
+
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+
+      initContainers:
+      - name: setup-host-access
+        image: busybox:1.36
+        command: ['sh', '-c', 'mkdir -p /host/var/log/edr-agent && chmod 755 /host/var/log/edr-agent']
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+        securityContext:
+          privileged: true
+
+      containers:
+      - name: edr-agent
+        image: edr-agent:latest
+        imagePullPolicy: IfNotPresent
+
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_PTRACE
+            - NET_ADMIN
+
+        volumeMounts:
+        - name: config
+          mountPath: /etc/edr-agent
+          readOnly: true
+        - name: ml-model
+          mountPath: /etc/edr-agent/model.onnx
+          subPath: model.onnx
+          readOnly: true
+        - name: host-proc
+          mountPath: /proc
+          readOnly: true
+        - name: host-sys
+          mountPath: /sys
+          readOnly: true
+        - name: host-etc
+          mountPath: /host/etc
+          readOnly: true
+        - name: host-root
+          mountPath: /host
+          readOnly: false
+        - name: log-dir
+          mountPath: /var/log/edr-agent
+
+        ports:
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+      volumes:
+      - name: config
+        configMap:
+          name: edr-agent-config
+      - name: ml-model
+        configMap:
+          name: edr-ml-model
+      - name: host-proc
+        hostPath:
+          path: /proc
+          type: Directory
+      - name: host-sys
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: host-etc
+        hostPath:
+          path: /etc
+          type: Directory
+      - name: host-root
+        hostPath:
+          path: /
+          type: Directory
+      - name: log-dir
+        hostPath:
+          path: /var/log/edr-agent
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: edr-agent
+  namespace: edr-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: edr-agent
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: edr-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edr-agent
+subjects:
+- kind: ServiceAccount
+  name: edr-agent
+  namespace: edr-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edr-agent-metrics
+  namespace: edr-system
+  labels:
+    app: edr-agent
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for DaemonSet
+  selector:
+    app: edr-agent
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
