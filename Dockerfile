@@ -1,22 +1,31 @@
 # Multi-stage build for EDR Agent
 FROM golang:1.21-alpine AS builder
 
+# Build arguments for versioning
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
 # Install build dependencies
 RUN apk add --no-cache git make
 
 # Set working directory
 WORKDIR /build
 
-# Copy go mod files
+# Copy go mod files (leverage Docker layer caching)
 COPY agent/go.mod agent/go.sum ./
 RUN go mod download
 
 # Copy source code
 COPY agent/ ./
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-w -s" \
+# Build binary with version info
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s \
+              -X main.Version=${VERSION} \
+              -X main.CommitSHA=${COMMIT_SHA} \
+              -X main.BuildTime=${BUILD_TIME}" \
+    -trimpath \
     -o edr-agent \
     cmd/agent/main.go
 

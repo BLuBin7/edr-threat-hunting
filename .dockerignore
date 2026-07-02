@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test & Coverage
+*.test
+coverage.out
+*.prof
+
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Kubernetes manifests
+k8s/
+
+# ML artifacts (built separately)
+ml-training/
+*.pkl
+*.onnx
+
+# Demo & benchmark
+demo/
+benchmark/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+vendor/

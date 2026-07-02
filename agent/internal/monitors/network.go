@@ -240,7 +240,7 @@ func (m *NetworkMonitor) findProcessForConnection(localPort int, protocol string
 }
 
 func (m *NetworkMonitor) isSuspiciousConnection(conn *NetworkEvent) bool {
-	// Check for connections to suspicious ports
+	// Check for connections to known C2 / malware ports
 	suspiciousPorts := []int{4444, 5555, 6666, 7777, 8888, 9999, 31337}
 	for _, port := range suspiciousPorts {
 		if conn.RemotePort == port {
@@ -248,11 +248,63 @@ func (m *NetworkMonitor) isSuspiciousConnection(conn *NetworkEvent) bool {
 		}
 	}
 
-	// Check for non-standard high ports
-	if conn.RemotePort > 49152 && conn.State == "ESTABLISHED" {
-		return true
+	// Check for connections to non-standard service ports (INBOUND only)
+	// Ephemeral ports (49152-65535) for OUTBOUND connections are normal
+	// Only flag suspicious if connecting TO a service port in unusual range
+	if conn.RemotePort > 1024 && conn.RemotePort < 49152 && conn.State == "ESTABLISHED" {
+		// Whitelist common service ports
+		commonPorts := map[int]bool{
+			3000: true,  // Development servers
+			3306: true,  // MySQL
+			5432: true,  // PostgreSQL
+			6379: true,  // Redis
+			8080: true,  // HTTP alternate
+			8443: true,  // HTTPS alternate
+			9090: true,  // Prometheus/metrics
+			27017: true, // MongoDB
+		}
+		if !commonPorts[conn.RemotePort] {
+			// Only suspicious if remote IP is not in private ranges
+			if !isPrivateIP(conn.RemoteAddr) {
+				return true
+			}
+		}
 	}
 
+	// Check for connections to external IPs on suspicious ports
+	if !isPrivateIP(conn.RemoteAddr) {
+		// External connection on ephemeral port is normal for outbound
+		// But beaconing might use specific patterns
+		// This should be handled by behavioral correlation, not here
+	}
+
+	return false
+}
+
+// isPrivateIP checks if an IP is in private ranges (RFC 1918)
+func isPrivateIP(ip string) bool {
+	// 10.0.0.0/8
+	if strings.HasPrefix(ip, "10.") {
+		return true
+	}
+	// 172.16.0.0/12
+	if strings.HasPrefix(ip, "172.") {
+		parts := strings.Split(ip, ".")
+		if len(parts) >= 2 {
+			second, _ := strconv.Atoi(parts[1])
+			if second >= 16 && second <= 31 {
+				return true
+			}
+		}
+	}
+	// 192.168.0.0/16
+	if strings.HasPrefix(ip, "192.168.") {
+		return true
+	}
+	// 127.0.0.0/8 (loopback)
+	if strings.HasPrefix(ip, "127.") {
+		return true
+	}
 	return false
 }
 
