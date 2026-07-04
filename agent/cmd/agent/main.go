@@ -22,6 +22,7 @@ var (
 	configPath = flag.String("config", "/etc/edr-agent/config.yaml", "Path to configuration file")
 	version    = "1.0.0"
 	buildTime  = "unknown"
+	// Updated to test ArgoCD Image Updater workflow
 )
 
 func main() {
