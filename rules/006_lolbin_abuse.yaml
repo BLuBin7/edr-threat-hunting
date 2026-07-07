@@ -1,0 +1,33 @@
+name: "Living Off The Land Binary (LOLBin) Abuse"
+description: "Detects suspicious use of legitimate system binaries for malicious purposes"
+severity: "high"
+category: "defense_evasion"
+enabled: true
+score_modifier: 0.7
+
+conditions:
+  - field: "process_name"
+    operator: "in"
+    value: ["certutil", "bitsadmin", "regsvr32", "mshta", "rundll32", "msiexec", "wmic"]
+
+  - field: "commandline"
+    operator: "contains"
+    value: ["download", "http://", "https://", "-urlcache", "-f", "/script", "javascript:"]
+
+mitre:
+  tactics:
+    - "TA0005 - Defense Evasion"
+    - "TA0002 - Execution"
+  techniques:
+    - "T1218 - Signed Binary Proxy Execution"
+    - "T1105 - Ingress Tool Transfer"
+
+references:
+  - "https://attack.mitre.org/techniques/T1218/"
+  - "https://lolbas-project.github.io/"
+
+response_actions:
+  - "Kill the LOLBin process"
+  - "Investigate downloaded files"
+  - "Check parent process"
+  - "Review recent process execution history"

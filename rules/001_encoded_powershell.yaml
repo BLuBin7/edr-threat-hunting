@@ -1,0 +1,32 @@
+name: "Encoded PowerShell Command Execution"
+description: "Detects execution of PowerShell with encoded commands (common malware obfuscation technique)"
+severity: "high"
+category: "execution"
+enabled: true
+score_modifier: 0.8
+
+conditions:
+  - field: "process_name"
+    operator: "in"
+    value: ["powershell", "pwsh", "powershell.exe"]
+
+  - field: "commandline"
+    operator: "contains"
+    value: ["-enc", "-encodedcommand", "frombase64string", "::FromBase64String"]
+
+mitre:
+  tactics:
+    - "TA0002 - Execution"
+  techniques:
+    - "T1059.001 - PowerShell"
+    - "T1027 - Obfuscated Files or Information"
+
+references:
+  - "https://attack.mitre.org/techniques/T1059/001/"
+  - "https://attack.mitre.org/techniques/T1027/"
+
+response_actions:
+  - "Kill the suspicious PowerShell process"
+  - "Investigate parent process"
+  - "Check network connections from this process"
+  - "Analyze encoded command content"

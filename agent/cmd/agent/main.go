@@ -13,6 +13,8 @@ import (
 	"github.com/binhbl/edr-threat-hunting/agent/internal/correlation"
 	"github.com/binhbl/edr-threat-hunting/agent/internal/ml"
 	"github.com/binhbl/edr-threat-hunting/agent/internal/monitors"
+	"github.com/binhbl/edr-threat-hunting/agent/internal/output"
+	"github.com/binhbl/edr-threat-hunting/agent/internal/rules"
 	"github.com/binhbl/edr-threat-hunting/agent/internal/scoring"
 	"github.com/binhbl/edr-threat-hunting/agent/pkg/metrics"
 	log "github.com/sirupsen/logrus"
@@ -48,6 +50,15 @@ func main() {
 	metricsExporter := metrics.NewPrometheusExporter(cfg.Metrics.Port)
 	go metricsExporter.Start()
 
+	// Initialize VictoriaMetrics exporter for threat alerts
+	vmExporter := output.NewVictoriaMetricsExporter(
+		cfg.Output.VictoriaMetrics.Endpoint,
+		cfg.Output.VictoriaMetrics.Enabled,
+	)
+	if cfg.Output.VictoriaMetrics.Enabled {
+		log.WithField("endpoint", cfg.Output.VictoriaMetrics.Endpoint).Info("VictoriaMetrics exporter enabled")
+	}
+
 	// Initialize context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,6 +86,21 @@ func main() {
 		scoring.WithThreshold(cfg.Scoring.Threshold),
 	)
 	log.Info("Threat scoring engine initialized")
+
+	// Initialize rules engine (optional YARA-like detection rules)
+	var rulesEngine *rules.Engine
+	if cfg.Rules.Enabled {
+		rulesEngine, err = rules.NewEngine(cfg.Rules.RulesDir)
+		if err != nil {
+			log.WithError(err).Warn("Failed to initialize rules engine, continuing without rule-based detection")
+		} else {
+			if startErr := rulesEngine.Start(); startErr != nil {
+				log.WithError(startErr).Warn("Failed to start rules engine")
+			} else {
+				log.WithField("rules_dir", cfg.Rules.RulesDir).Info("Rules engine initialized")
+			}
+		}
+	}
 
 	// Channel for telemetry events
 	eventChan := make(chan monitors.Event, 10000)
@@ -109,7 +135,7 @@ func main() {
 	log.Info("Persistence monitor started")
 
 	// Start main event processing loop
-	go processEvents(ctx, eventChan, correlationEngine, mlEngine, scoringEngine, metricsExporter)
+	go processEvents(ctx, eventChan, correlationEngine, mlEngine, scoringEngine, rulesEngine, metricsExporter, vmExporter, cfg.Agent.Hostname)
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -130,7 +156,10 @@ func processEvents(
 	correlationEngine *correlation.Engine,
 	mlEngine *ml.ONNXEngine,
 	scoringEngine *scoring.Engine,
+	rulesEngine *rules.Engine,
 	metricsExporter *metrics.PrometheusExporter,
+	vmExporter *output.VictoriaMetricsExporter,
+	hostname string,
 ) {
 	eventCount := 0
 	for {
@@ -141,6 +170,23 @@ func processEvents(
 		case event := <-eventChan:
 			eventCount++
 			metricsExporter.IncEventsProcessed(event.Type.String())
+
+			// Step 0: Check against detection rules (fast path for known bad patterns)
+			if rulesEngine != nil {
+				ruleMatches := rulesEngine.Evaluate(event.Data)
+				if len(ruleMatches) > 0 {
+					for _, match := range ruleMatches {
+						log.WithFields(log.Fields{
+							"rule_name":      match.Rule.Name,
+							"severity":       match.Rule.Severity,
+							"category":       match.Rule.Category,
+							"description":    match.Rule.Description,
+							"matched_fields": match.MatchedFields,
+						}).Warn("RULE MATCH - Known threat pattern detected")
+						metricsExporter.IncAlertsGenerated(match.Rule.Severity)
+					}
+				}
+			}
 
 			// Step 1: Add event to correlation engine (sliding window)
 			correlationEngine.AddEvent(event)
@@ -174,7 +220,10 @@ func processEvents(
 					metricsExporter.IncAlertsGenerated(threat.Severity)
 					logThreatAlert(threat)
 
-					// TODO: Send to VictoriaMetrics / ClickHouse
+					// Send to VictoriaMetrics
+					if err := vmExporter.SendThreat(threat, chain, hostname); err != nil {
+						log.WithError(err).Warn("Failed to send threat alert to VictoriaMetrics")
+					}
 				}
 
 				if eventCount%1000 == 0 {

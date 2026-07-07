@@ -1,0 +1,26 @@
+name: "Suspicious Cron Job Creation or Modification"
+description: "Detects creation or modification of cron jobs (persistence mechanism)"
+severity: "medium"
+category: "persistence"
+enabled: true
+score_modifier: 0.5
+
+conditions:
+  - field: "type"
+    operator: "eq"
+    value: "cron"
+
+mitre:
+  tactics:
+    - "TA0003 - Persistence"
+  techniques:
+    - "T1053.003 - Cron"
+
+references:
+  - "https://attack.mitre.org/techniques/T1053/003/"
+
+response_actions:
+  - "Review cron job content"
+  - "Identify process that created the cron job"
+  - "Check if cron job executable is suspicious"
+  - "Remove malicious cron entries"

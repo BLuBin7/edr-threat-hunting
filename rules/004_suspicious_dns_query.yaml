@@ -1,0 +1,26 @@
+name: "Suspicious DNS Query to Free Dynamic DNS Provider"
+description: "Detects DNS queries to suspicious free dynamic DNS providers (common C2 infrastructure)"
+severity: "medium"
+category: "command_and_control"
+enabled: true
+score_modifier: 0.6
+
+conditions:
+  - field: "dns_query"
+    operator: "contains"
+    value: [".tk", ".ml", ".ga", ".cf", ".gq", "dyndns", "no-ip", "afraid.org"]
+
+mitre:
+  tactics:
+    - "TA0011 - Command and Control"
+  techniques:
+    - "T1071.004 - DNS"
+
+references:
+  - "https://attack.mitre.org/techniques/T1071/004/"
+
+response_actions:
+  - "Block DNS query at firewall"
+  - "Investigate process making the DNS query"
+  - "Check for other network connections from same process"
+  - "Review recent file modifications"

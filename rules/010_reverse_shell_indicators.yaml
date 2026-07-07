@@ -1,0 +1,32 @@
+name: "Reverse Shell Network Indicators"
+description: "Detects network patterns indicative of reverse shell connections"
+severity: "critical"
+category: "command_and_control"
+enabled: true
+score_modifier: 0.85
+
+conditions:
+  - field: "process_name"
+    operator: "in"
+    value: ["bash", "sh", "nc", "netcat", "ncat", "socat"]
+
+  - field: "protocol"
+    operator: "eq"
+    value: "tcp"
+
+mitre:
+  tactics:
+    - "TA0011 - Command and Control"
+  techniques:
+    - "T1071.001 - Web Protocols"
+    - "T1105 - Ingress Tool Transfer"
+
+references:
+  - "https://attack.mitre.org/techniques/T1071/001/"
+
+response_actions:
+  - "Immediately kill the process"
+  - "Block remote IP at firewall"
+  - "Isolate the endpoint"
+  - "Capture network PCAP"
+  - "Review all processes and network connections"

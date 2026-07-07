@@ -1,0 +1,30 @@
+name: "Suspicious Sudo/Privilege Escalation Attempt"
+description: "Detects attempts to escalate privileges via sudo or other mechanisms"
+severity: "high"
+category: "privilege_escalation"
+enabled: true
+score_modifier: 0.75
+
+conditions:
+  - field: "is_elevated"
+    operator: "eq"
+    value: true
+
+  - field: "process_name"
+    operator: "in"
+    value: ["sudo", "su", "pkexec", "polkit"]
+
+mitre:
+  tactics:
+    - "TA0004 - Privilege Escalation"
+  techniques:
+    - "T1548.003 - Sudo and Sudo Caching"
+
+references:
+  - "https://attack.mitre.org/techniques/T1548/003/"
+
+response_actions:
+  - "Review sudo command executed"
+  - "Check if user is authorized for sudo"
+  - "Investigate parent process"
+  - "Review sudo logs (/var/log/auth.log)"

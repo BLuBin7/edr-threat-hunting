@@ -1,0 +1,30 @@
+name: "SSH Configuration or Key File Modification"
+description: "Detects modifications to SSH configuration or authorized_keys files"
+severity: "high"
+category: "persistence"
+enabled: true
+score_modifier: 0.75
+
+conditions:
+  - field: "path"
+    operator: "contains"
+    value: [".ssh/", "sshd_config", "authorized_keys", "ssh_host"]
+
+  - field: "operation"
+    operator: "in"
+    value: ["write", "modify", "create"]
+
+mitre:
+  tactics:
+    - "TA0003 - Persistence"
+  techniques:
+    - "T1098.004 - SSH Authorized Keys"
+
+references:
+  - "https://attack.mitre.org/techniques/T1098/004/"
+
+response_actions:
+  - "Review SSH key changes"
+  - "Check if modification was authorized"
+  - "Audit all SSH keys on system"
+  - "Review recent SSH login attempts"

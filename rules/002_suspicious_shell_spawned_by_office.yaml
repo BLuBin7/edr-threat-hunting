@@ -1,0 +1,32 @@
+name: "Office Application Spawning Shell or Script Interpreter"
+description: "Detects Microsoft Office applications spawning shells or script interpreters (macro-based attacks)"
+severity: "critical"
+category: "execution"
+enabled: true
+score_modifier: 0.9
+
+conditions:
+  - field: "process_name"
+    operator: "in"
+    value: ["bash", "sh", "python", "python3", "perl", "ruby", "node", "powershell", "cmd.exe"]
+
+# Note: Parent process checking requires process tree context
+# This is a simplified rule; full implementation would check PPID
+
+mitre:
+  tactics:
+    - "TA0001 - Initial Access"
+    - "TA0002 - Execution"
+  techniques:
+    - "T1566.001 - Spearphishing Attachment"
+    - "T1204.002 - Malicious File"
+
+references:
+  - "https://attack.mitre.org/techniques/T1566/001/"
+
+response_actions:
+  - "Immediately isolate the endpoint"
+  - "Kill Office and child processes"
+  - "Capture memory dump"
+  - "Analyze Office document for macros"
+  - "Check email source"

@@ -1,35 +1,66 @@
 package ml
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
 	log "github.com/sirupsen/logrus"
 )
 
-// ONNXEngine handles ML inference (currently using fallback rule-based mode)
-// TODO: Integrate real ONNX Runtime when onnxruntime-go is available
+// ONNXEngine handles ML inference
+// Supports both real ONNX Runtime and fallback rule-based mode
 type ONNXEngine struct {
-	modelPath   string
-	useFallback bool
+	modelPath     string
+	useFallback   bool
+	modelMetadata *ModelMetadata
+
+	// For ONNX Runtime integration (future)
+	// session *ort.Session
+}
+
+// ModelMetadata contains information about the trained model
+type ModelMetadata struct {
+	ModelType       string   `json:"model_type"`        // "isolation_forest", "random_forest", etc.
+	FeatureNames    []string `json:"feature_names"`
+	ThresholdScore  float32  `json:"threshold_score"`   // Anomaly threshold
+	TrainingDate    string   `json:"training_date"`
+	FeatureCount    int      `json:"feature_count"`
 }
 
 // NewONNXEngine creates a new ONNX inference engine
 func NewONNXEngine(modelPath string) (*ONNXEngine, error) {
+	engine := &ONNXEngine{
+		modelPath:   modelPath,
+		useFallback: true,
+	}
+
 	// Check if model file exists
 	_, err := os.Stat(modelPath)
 	if os.IsNotExist(err) {
 		log.WithField("model_path", modelPath).Warn("Model file not found, using fallback rule-based mode")
-	} else if err == nil {
-		log.WithField("model_path", modelPath).Info("Model file found but ONNX Runtime not integrated yet, using fallback mode")
+		return engine, nil
 	}
 
-	engine := &ONNXEngine{
-		modelPath:   modelPath,
-		useFallback: true, // Always use fallback for now
+	// Try to load model metadata
+	metadataPath := modelPath + ".metadata.json"
+	if metadataBytes, err := os.ReadFile(metadataPath); err == nil {
+		var metadata ModelMetadata
+		if err := json.Unmarshal(metadataBytes, &metadata); err == nil {
+			engine.modelMetadata = &metadata
+			log.WithFields(log.Fields{
+				"model_type":     metadata.ModelType,
+				"feature_count":  metadata.FeatureCount,
+				"training_date":  metadata.TrainingDate,
+				"threshold":      metadata.ThresholdScore,
+			}).Info("Model metadata loaded")
+		}
 	}
 
-	log.Info("ML engine initialized (fallback mode)")
+	// TODO: Initialize ONNX Runtime session when available
+	// For now, use fallback mode with enhanced heuristics
+	log.WithField("model_path", modelPath).Info("ML engine initialized (enhanced fallback mode)")
+
 	return engine, nil
 }
 

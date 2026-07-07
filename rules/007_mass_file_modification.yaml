@@ -1,0 +1,30 @@
+name: "Mass File Modification Activity (Ransomware Indicator)"
+description: "Detects rapid mass file modification which may indicate ransomware activity"
+severity: "critical"
+category: "impact"
+enabled: true
+score_modifier: 0.9
+
+conditions:
+  # Note: This requires aggregation logic in the correlation engine
+  # Rule matches when many file operations detected in short time
+
+  - field: "operation"
+    operator: "in"
+    value: ["write", "modify", "rename"]
+
+mitre:
+  tactics:
+    - "TA0040 - Impact"
+  techniques:
+    - "T1486 - Data Encrypted for Impact"
+
+references:
+  - "https://attack.mitre.org/techniques/T1486/"
+
+response_actions:
+  - "IMMEDIATE: Kill all processes by this user"
+  - "Isolate endpoint from network"
+  - "Disable user account"
+  - "Snapshot remaining unencrypted files"
+  - "Initiate ransomware response playbook"

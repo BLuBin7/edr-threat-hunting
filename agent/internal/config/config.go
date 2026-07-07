@@ -15,6 +15,7 @@ type Config struct {
 	Correlation CorrelationConfig `yaml:"correlation"`
 	Scoring     ScoringConfig     `yaml:"scoring"`
 	ML          MLConfig          `yaml:"ml"`
+	Rules       RulesConfig       `yaml:"rules"`
 	Metrics     MetricsConfig     `yaml:"metrics"`
 	Output      OutputConfig      `yaml:"output"`
 }
@@ -48,6 +49,12 @@ type MLConfig struct {
 	ModelPath        string `yaml:"model_path"`
 	EnableInference  bool   `yaml:"enable_inference"`
 	FallbackOnError  bool   `yaml:"fallback_on_error"`
+}
+
+type RulesConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	RulesDir  string `yaml:"rules_dir"`
+	AutoReload bool  `yaml:"auto_reload"`
 }
 
 type MetricsConfig struct {
@@ -101,6 +108,10 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("ml.model_path", "/etc/edr-agent/model.onnx")
 	viper.SetDefault("ml.enable_inference", true)
 	viper.SetDefault("ml.fallback_on_error", true)
+
+	viper.SetDefault("rules.enabled", true)
+	viper.SetDefault("rules.rules_dir", "/etc/edr-agent/rules")
+	viper.SetDefault("rules.auto_reload", true)
 
 	viper.SetDefault("metrics.enabled", true)
 	viper.SetDefault("metrics.port", 9090)
