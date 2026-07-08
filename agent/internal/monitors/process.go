@@ -1,10 +1,13 @@
 package monitors
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -59,7 +62,43 @@ func (m *ProcessMonitor) pollProcesses(eventChan chan<- Event) {
 	// Read /proc to discover new processes
 	procDirs, err := ioutil.ReadDir("/proc")
 	if err != nil {
-		log.WithError(err).Warn("Failed to read /proc")
+		// Fallback to ps command (macOS / BSD / fallback platforms)
+		events, psErr := m.pollPSProcesses()
+		if psErr != nil {
+			log.WithError(psErr).Debug("Failed to poll processes via ps command fallback")
+			return
+		}
+
+		currentPIDs := make(map[int]bool)
+		for _, pe := range events {
+			currentPIDs[pe.PID] = true
+			if m.seenPIDs[pe.PID] {
+				continue
+			}
+			m.seenPIDs[pe.PID] = true
+			eventChan <- Event{
+				Type:      EventTypeProcess,
+				Timestamp: pe.Timestamp,
+				Hostname:  getHostname(),
+				Data: map[string]interface{}{
+					"pid":             pe.PID,
+					"ppid":            pe.PPID,
+					"process_name":    pe.ProcessName,
+					"commandline":     pe.Commandline,
+					"username":        pe.Username,
+					"is_elevated":     pe.IsElevated,
+					"executable_path": pe.ExecutablePath,
+					"working_dir":     pe.WorkingDir,
+				},
+			}
+		}
+
+		// Cleanup terminated PIDs from seenPIDs map
+		for pid := range m.seenPIDs {
+			if !currentPIDs[pid] {
+				delete(m.seenPIDs, pid)
+			}
+		}
 		return
 	}
 
@@ -197,4 +236,58 @@ func getHostname() string {
 		return "unknown"
 	}
 	return hostname
+}
+
+// pollPSProcesses polls the running processes list on macOS and BSD systems
+func (m *ProcessMonitor) pollPSProcesses() ([]*ProcessEvent, error) {
+	cmd := exec.Command("ps", "-ax", "-o", "pid=", "-o", "ppid=", "-o", "user=", "-o", "command=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	var events []*ProcessEvent
+	scanner := bufio.NewScanner(&out)
+	for scanner.Scan() {
+		line := scanner.Text()
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		ppid, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		username := fields[2]
+
+		cmdline := strings.Join(fields[3:], " ")
+		exePath := fields[3]
+		processName := filepath.Base(exePath)
+
+		isElevated := username == "root"
+
+		events = append(events, &ProcessEvent{
+			PID:            pid,
+			PPID:           ppid,
+			ProcessName:    processName,
+			Commandline:    cmdline,
+			Username:       username,
+			Timestamp:      time.Now(),
+			IsElevated:     isElevated,
+			ExecutablePath: exePath,
+			WorkingDir:     "unknown",
+		})
+	}
+	return events, nil
 }

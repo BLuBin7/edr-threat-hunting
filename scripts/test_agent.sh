@@ -57,8 +57,13 @@ run_test "Detection rules loaded (found ${rule_count} rules)" "test ${rule_count
 echo -e "${YELLOW}[TEST $((TESTS_RUN + 1))]${NC} Validating YAML syntax in all rules"
 TESTS_RUN=$((TESTS_RUN + 1))
 yaml_valid=true
+PYTHON_BIN="python3"
+if [ -f "${PROJECT_ROOT}/ml-training/venv/bin/python3" ]; then
+    PYTHON_BIN="${PROJECT_ROOT}/ml-training/venv/bin/python3"
+fi
+
 for rule_file in "${PROJECT_ROOT}/rules"/*.yaml; do
-    if ! python3 -c "import yaml; yaml.safe_load(open('$rule_file'))" 2>/dev/null; then
+    if ! "$PYTHON_BIN" -c "import yaml; yaml.safe_load(open('$rule_file'))" 2>/dev/null; then
         echo -e "${RED}✗ Invalid YAML: $(basename $rule_file)${NC}"
         yaml_valid=false
     fi
@@ -124,16 +129,30 @@ run_test "Rules engine exists" "test -f ${PROJECT_ROOT}/agent/internal/rules/eng
 # Test 14: Check output exporters
 run_test "VictoriaMetrics exporter exists" "test -f ${PROJECT_ROOT}/agent/internal/output/victoria_metrics.go"
 
-# Test 15: Run agent for 5 seconds (basic smoke test)
-echo -e "${YELLOW}[TEST $((TESTS_RUN + 1))]${NC} Agent smoke test (5 seconds)"
+# Test 15: Run agent (basic smoke test)
+echo -e "${YELLOW}[TEST $((TESTS_RUN + 1))]${NC} Agent smoke test"
 TESTS_RUN=$((TESTS_RUN + 1))
-if timeout 5s "${PROJECT_ROOT}/bin/edr-agent" --config "${PROJECT_ROOT}/agent/config.yaml" 2>&1 | grep -q "EDR Threat Hunting Agent starting"; then
+
+# Start agent in background
+"${PROJECT_ROOT}/bin/edr-agent" --config "${PROJECT_ROOT}/agent/config.yaml" > /tmp/agent_smoke.log 2>&1 &
+SMOKE_PID=$!
+
+# Wait for it to start
+sleep 3
+
+# Check if log has starting msg
+if grep -q "EDR Threat Hunting Agent starting" /tmp/agent_smoke.log; then
     echo -e "${GREEN}✓ PASSED - Agent starts successfully${NC}"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
     echo -e "${RED}✗ FAILED - Agent failed to start${NC}"
+    cat /tmp/agent_smoke.log
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
+
+# Cleanup
+kill $SMOKE_PID 2>/dev/null || true
+rm -f /tmp/agent_smoke.log
 echo ""
 
 # Summary

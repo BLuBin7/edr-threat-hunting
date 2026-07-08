@@ -2,6 +2,8 @@ package scoring
 
 import (
 	"fmt"
+	"math"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -64,6 +66,11 @@ type Threat struct {
 	RarityScore         float32
 	SequenceScore       float32
 	MLScore             float32
+
+	// Weak signals (sliding window analytics with decay)
+	WeakSignalScore     float32
+	WeakSignalAlert     bool
+	WeakSignals         []string
 }
 
 // Calculate computes the final threat score
@@ -79,23 +86,39 @@ func (e *Engine) Calculate(chain correlation.AttackChain, mlScore float32) Threa
 
 	// Weighted final score
 	finalScore := (e.rarityWeight * rarityScore) +
-	              (e.sequenceWeight * sequenceScore) +
-	              (e.mlWeight * mlAnomalyScore)
+		(e.sequenceWeight * sequenceScore) +
+		(e.mlWeight * mlAnomalyScore)
+
+	// Sliding window weak signal scoring with time decay (Mức Trung Bình)
+	weakSignalScore, weakSignals := e.CalculateWeakSignalScore(chain)
+	weakSignalAlert := weakSignalScore >= 50.0
+
+	// Escalate final score to alert threshold if weak signals exceed limit (ngưỡng 50)
+	if weakSignalAlert && finalScore < e.threshold {
+		finalScore = e.threshold + 0.05
+	}
 
 	severity := e.getSeverity(finalScore)
 
+	threatContext := e.buildContext(chain)
+	threatContext["weak_signal_score"] = weakSignalScore
+	threatContext["weak_signal_alert"] = weakSignalAlert
+
 	threat := Threat{
-		Score:               finalScore,
-		Severity:            severity,
-		AttackChainSummary:  e.buildChainSummary(chain),
-		Context:             e.buildContext(chain),
-		MitreTactics:        chain.MitreTactics,
-		MitreTechniques:     chain.MitreTechniques,
-		RecommendedAction:   e.getRecommendedAction(chain, severity),
-		Timestamp:           time.Now(),
-		RarityScore:         rarityScore,
-		SequenceScore:       sequenceScore,
-		MLScore:             mlAnomalyScore,
+		Score:              finalScore,
+		Severity:           severity,
+		AttackChainSummary: e.buildChainSummary(chain),
+		Context:            threatContext,
+		MitreTactics:       chain.MitreTactics,
+		MitreTechniques:    chain.MitreTechniques,
+		RecommendedAction:  e.getRecommendedAction(chain, severity),
+		Timestamp:          time.Now(),
+		RarityScore:        rarityScore,
+		SequenceScore:      sequenceScore,
+		MLScore:            mlAnomalyScore,
+		WeakSignalScore:    weakSignalScore,
+		WeakSignalAlert:    weakSignalAlert,
+		WeakSignals:        weakSignals,
 	}
 
 	return threat
@@ -297,6 +320,19 @@ func (t Threat) FormattedOutput() string {
 	sb.WriteString(fmt.Sprintf("  ├─ Sequence Score:  %.2f (weight: 40%%)\n", t.SequenceScore))
 	sb.WriteString(fmt.Sprintf("  └─ ML Score:        %.2f (weight: 30%%)\n\n", t.MLScore))
 
+	if t.WeakSignalScore > 0 {
+		sb.WriteString("Weak Signals (Sliding Window & Decay):\n")
+		sb.WriteString(fmt.Sprintf("  ├─ Total Score:    %.1f / 50.0 (Threshold)\n", t.WeakSignalScore))
+		if t.WeakSignalAlert {
+			sb.WriteString("  ├─ Alert Trigger:  🚨 WEAK SIGNAL EXCEEDS 50 🚨\n")
+		}
+		sb.WriteString("  └─ Active Signals:\n")
+		for _, signal := range t.WeakSignals {
+			sb.WriteString(fmt.Sprintf("      • %s\n", signal))
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(t.MitreTactics) > 0 {
 		sb.WriteString("MITRE ATT&CK Tactics:\n")
 		for _, tactic := range t.MitreTactics {
@@ -332,4 +368,71 @@ func min(a, b float32) float32 {
 		return a
 	}
 	return b
+}
+
+// CalculateWeakSignalScore computes accumulated decayed threat scores for the chain (half-life of 120 seconds)
+func (e *Engine) CalculateWeakSignalScore(chain correlation.AttackChain) (float32, []string) {
+	var totalScore float32
+	var signals []string
+	halfLife := 120.0 // 2 minutes half life
+
+	decay := func(base float32, ts time.Time) float32 {
+		age := time.Since(ts).Seconds()
+		if age < 0 {
+			age = 0
+		}
+		mult := math.Pow(0.5, age/halfLife)
+		return base * float32(mult)
+	}
+
+	for _, node := range chain.ProcessChain {
+		// 1. Shell Spawns (+20)
+		if isShell(node.ProcessName) {
+			val := decay(20.0, node.StartTime)
+			if val > 0.1 {
+				totalScore += val
+				signals = append(signals, fmt.Sprintf("%s spawn shell (+%.1f)", node.ProcessName, val))
+			}
+		}
+
+		// 2. Sensitive File Access (+20)
+		for _, fileOp := range node.FileOps {
+			if fileOp.IsSensitive {
+				val := decay(20.0, fileOp.Timestamp)
+				if val > 0.1 {
+					totalScore += val
+					signals = append(signals, fmt.Sprintf("đọc %s (+%.1f)", filepath.Base(fileOp.Path), val))
+				}
+			}
+		}
+
+		// 3. Network Outbounds (+20)
+		for _, netConn := range node.NetConnections {
+			// Trigger on remote port 4444 (reverse shell) or suspicious domain / activity
+			isSuspicious := netConn.DNSQuery != "" || netConn.RemotePort == 4444 || netConn.RemotePort == 8000 || netConn.RemotePort == 443
+			if isSuspicious {
+				val := decay(20.0, netConn.Timestamp)
+				if val > 0.1 {
+					totalScore += val
+					dest := netConn.DNSQuery
+					if dest == "" {
+						dest = fmt.Sprintf("%s:%d", netConn.RemoteAddr, netConn.RemotePort)
+					}
+					signals = append(signals, fmt.Sprintf("outbound tới %s (+%.1f)", dest, val))
+				}
+			}
+		}
+	}
+
+	return totalScore, signals
+}
+
+func isShell(name string) bool {
+	shells := []string{"bash", "sh", "zsh", "fish", "dash", "pwsh", "powershell"}
+	for _, s := range shells {
+		if name == s || strings.HasSuffix(name, "/"+s) {
+			return true
+		}
+	}
+	return false
 }

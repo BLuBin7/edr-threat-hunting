@@ -353,6 +353,14 @@ func (e *Engine) isSuspiciousChain(lineage []*ProcessNode) bool {
 		return true
 	}
 
+	// Pattern 4: Weak signals correlation (Mức Trung Bình)
+	// If any node in the lineage has file operations or network connections, evaluate the chain
+	for _, node := range lineage {
+		if len(node.FileOps) > 0 || len(node.NetConnections) > 0 {
+			return true
+		}
+	}
+
 	return false
 }
 

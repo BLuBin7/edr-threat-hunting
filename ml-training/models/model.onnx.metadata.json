@@ -1,0 +1,23 @@
+{
+  "model_type": "isolation_forest",
+  "feature_names": [
+    "lineage_depth",
+    "rare_parent_child",
+    "privilege_escalation",
+    "cmdline_length",
+    "cmdline_entropy",
+    "encoded_cmd",
+    "file_modifications",
+    "sensitive_file_access",
+    "mass_file_activity_rate",
+    "network_connections",
+    "suspicious_dns",
+    "beaconing_score",
+    "persistence_mechanism",
+    "cron_count",
+    "service_count"
+  ],
+  "threshold_score": -0.44397099055433775,
+  "training_date": "2026-07-07",
+  "feature_count": 15
+}

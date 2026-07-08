@@ -64,7 +64,7 @@ func main() {
 	defer cancel()
 
 	// Initialize ML inference engine
-	mlEngine, err := ml.NewONNXEngine(cfg.ML.ModelPath)
+	mlEngine, err := ml.NewONNXEngine(cfg.ML.ModelPath, cfg.ML.LibraryPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize ML engine: %v", err)
 	}
@@ -136,6 +136,11 @@ func main() {
 
 	// Start main event processing loop
 	go processEvents(ctx, eventChan, correlationEngine, mlEngine, scoringEngine, rulesEngine, metricsExporter, vmExporter, cfg.Agent.Hostname)
+
+	if os.Getenv("EDR_SIMULATE_ATTACK") == "true" {
+		log.Info("EDR_SIMULATE_ATTACK is enabled, injecting simulated attack sequence...")
+		go injectSimulatedAttack(eventChan)
+	}
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -290,4 +295,96 @@ func logThreatAlert(threat scoring.Threat) {
 
 	// Pretty print attack chain
 	fmt.Println("\n" + threat.FormattedOutput())
+}
+
+func injectSimulatedAttack(eventChan chan<- monitors.Event) {
+	time.Sleep(2 * time.Second) // Wait for engines and monitors to fully initialize
+
+	hostname, _ := os.Hostname()
+
+	log.Info("[SIMULATOR] Injecting bash parent process (PID: 99990)...")
+	eventChan <- monitors.Event{
+		Type:      monitors.EventTypeProcess,
+		Timestamp: time.Now().Add(-20 * time.Second),
+		Hostname:  hostname,
+		Data: map[string]interface{}{
+			"pid":             99990,
+			"ppid":            99980,
+			"process_name":    "bash",
+			"commandline":     "/bin/bash",
+			"executable_path": "/bin/bash",
+			"username":        "nginx",
+			"is_elevated":     false,
+			"working_dir":     "/var/www",
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting sh child process (PID: 99991) -> spawn shell (+20)...")
+	eventChan <- monitors.Event{
+		Type:      monitors.EventTypeProcess,
+		Timestamp: time.Now().Add(-10 * time.Second),
+		Hostname:  hostname,
+		Data: map[string]interface{}{
+			"pid":             99991,
+			"ppid":            99990,
+			"process_name":    "sh",
+			"commandline":     "sh -c \"echo hello\"",
+			"executable_path": "/bin/sh",
+			"username":        "nginx",
+			"is_elevated":     false,
+			"working_dir":     "/var/www",
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting sensitive file read on /etc/shadow -> đọc shadow (+20)...")
+	eventChan <- monitors.Event{
+		Type:          monitors.EventTypeFile,
+		Timestamp:     time.Now().Add(-5 * time.Second),
+		Hostname:      hostname,
+		Data: map[string]interface{}{
+			"pid":          99991,
+			"path":         "/etc/shadow",
+			"operation":    "read",
+			"is_sensitive": true,
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting outbound network connection -> outbound tới IP lạ (+20)...")
+	eventChan <- monitors.Event{
+		Type:          monitors.EventTypeNetwork,
+		Timestamp:     time.Now(),
+		Hostname:      hostname,
+		Data: map[string]interface{}{
+			"pid":         99991,
+			"remote_addr": "8.8.8.8",
+			"remote_port": 4444,
+			"protocol":    "tcp",
+			"dns_query":   "attacker-c2.com",
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting final process execution to trigger correlation calculation...")
+	eventChan <- monitors.Event{
+		Type:      monitors.EventTypeProcess,
+		Timestamp: time.Now(),
+		Hostname:  hostname,
+		Data: map[string]interface{}{
+			"pid":             99992,
+			"ppid":            99991,
+			"process_name":    "whoami",
+			"commandline":     "whoami",
+			"executable_path": "/usr/bin/whoami",
+			"username":        "nginx",
+			"is_elevated":     false,
+			"working_dir":     "/var/www",
+		},
+	}
 }

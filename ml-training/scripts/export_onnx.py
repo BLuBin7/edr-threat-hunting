@@ -28,7 +28,7 @@ def export_to_onnx(model, output_path, quantize=True):
     onnx_model = convert_sklearn(
         model,
         initial_types=initial_type,
-        target_opset=12
+        target_opset={'': 12, 'ai.onnx.ml': 3}
     )
 
     # Save unquantized model
@@ -61,9 +61,26 @@ def export_to_onnx(model, output_path, quantize=True):
 
         except ImportError:
             print("⚠️  Quantization not available, using Float32 model")
-            os.rename(temp_path, output_path)
-    else:
-        os.rename(temp_path, output_path)
+    # Save model metadata
+    import json
+    from datetime import datetime
+    metadata_path = output_path + ".metadata.json"
+    metadata = {
+        "model_type": "isolation_forest",
+        "feature_names": [
+            "lineage_depth", "rare_parent_child", "privilege_escalation",
+            "cmdline_length", "cmdline_entropy", "encoded_cmd",
+            "file_modifications", "sensitive_file_access", "mass_file_activity_rate",
+            "network_connections", "suspicious_dns", "beaconing_score",
+            "persistence_mechanism", "cron_count", "service_count"
+        ],
+        "threshold_score": float(model.offset_),
+        "training_date": datetime.now().strftime("%Y-%m-%d"),
+        "feature_count": 15
+    }
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"✅ Model metadata saved: {metadata_path}")
 
     return output_path
 

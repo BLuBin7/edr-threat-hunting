@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-07T09:52:42.583Z",
+  "projectRoot": "/Users/binhbl/Documents/my-pj/homelab/edr-threat-hunting",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1783417962583
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/binhbl/edr-threat-hunting/agent/internal/monitors"
+	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 )
 
@@ -47,6 +48,7 @@ type ScoringConfig struct {
 
 type MLConfig struct {
 	ModelPath        string `yaml:"model_path"`
+	LibraryPath      string `yaml:"library_path"`
 	EnableInference  bool   `yaml:"enable_inference"`
 	FallbackOnError  bool   `yaml:"fallback_on_error"`
 }
@@ -106,6 +108,7 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("scoring.threshold", 0.7)
 
 	viper.SetDefault("ml.model_path", "/etc/edr-agent/model.onnx")
+	viper.SetDefault("ml.library_path", "")
 	viper.SetDefault("ml.enable_inference", true)
 	viper.SetDefault("ml.fallback_on_error", true)
 
@@ -134,7 +137,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	var config Config
-	if err := viper.Unmarshal(&config); err != nil {
+	if err := viper.Unmarshal(&config, func(c *mapstructure.DecoderConfig) {
+		c.TagName = "yaml"
+	}); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 

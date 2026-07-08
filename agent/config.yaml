@@ -39,7 +39,8 @@ scoring:
   threshold: 0.7
 
 ml:
-  model_path: /etc/edr-agent/model.onnx
+  model_path: ml-training/models/model.onnx
+  library_path: ""  # Leave empty for auto-detection, or specify path to libonnxruntime.so/dylib
   enable_inference: true
   fallback_on_error: true
 

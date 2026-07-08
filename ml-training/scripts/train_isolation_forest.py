@@ -8,8 +8,12 @@ import os
 import pickle
 from datetime import datetime
 
-import mlflow
-import mlflow.sklearn
+try:
+    import mlflow
+    import mlflow.sklearn
+    HAS_MLFLOW = True
+except ImportError:
+    HAS_MLFLOW = False
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
@@ -257,17 +261,16 @@ def main():
 
     args = parser.parse_args()
 
-    # Setup MLflow
-    mlflow.set_tracking_uri(args.mlflow_tracking_uri)
-    mlflow.set_experiment("edr-threat-hunting")
+    active_mlflow = False
+    if HAS_MLFLOW:
+        try:
+            mlflow.set_tracking_uri(args.mlflow_tracking_uri)
+            mlflow.set_experiment("edr-threat-hunting")
+            active_mlflow = True
+        except Exception as e:
+            print(f"⚠️ Failed to connect to MLflow: {e}. Running training locally only.")
 
-    with mlflow.start_run():
-        # Log parameters
-        mlflow.log_param("n_normal", args.n_normal)
-        mlflow.log_param("n_anomaly", args.n_anomaly)
-        mlflow.log_param("contamination", args.contamination)
-        mlflow.log_param("n_estimators", 100)
-
+    def run_training():
         # Generate data
         X, y = generate_synthetic_data(args.n_normal, args.n_anomaly)
 
@@ -286,13 +289,8 @@ def main():
         # Evaluate
         metrics, y_pred, scores = evaluate_model(model, X_test, y_test)
 
-        # Log metrics to MLflow
-        for key, value in metrics.items():
-            mlflow.log_metric(key, value)
-
         # Plot results
         plot_results(scores, y_test, args.output_dir)
-        mlflow.log_artifact(os.path.join(args.output_dir, 'anomaly_score_distribution.png'))
 
         # Save model
         os.makedirs(args.output_dir, exist_ok=True)
@@ -303,12 +301,33 @@ def main():
 
         print(f"\nModel saved: {model_path}")
 
-        # Log model to MLflow
-        mlflow.sklearn.log_model(model, "model")
-
         print(f"\n✅ Training completed successfully!")
         print(f"   F1 Score: {metrics['f1_score']:.4f}")
         print(f"   ROC AUC:  {metrics['roc_auc']:.4f}")
+        return model, metrics
+
+    if active_mlflow:
+        try:
+            with mlflow.start_run():
+                # Log parameters
+                mlflow.log_param("n_normal", args.n_normal)
+                mlflow.log_param("n_anomaly", args.n_anomaly)
+                mlflow.log_param("contamination", args.contamination)
+                mlflow.log_param("n_estimators", 100)
+
+                model, metrics = run_training()
+
+                # Log metrics to MLflow
+                for key, value in metrics.items():
+                    mlflow.log_metric(key, value)
+
+                mlflow.log_artifact(os.path.join(args.output_dir, 'anomaly_score_distribution.png'))
+                mlflow.sklearn.log_model(model, "model")
+        except Exception as e:
+            print(f"⚠️ MLflow logging failed: {e}. Continuing training locally.")
+            run_training()
+    else:
+        run_training()
 
 
 if __name__ == '__main__':
