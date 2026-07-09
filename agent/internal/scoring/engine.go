@@ -305,7 +305,7 @@ func (t Threat) FormattedOutput() string {
 	var sb strings.Builder
 
 	sb.WriteString("╔═══════════════════════════════════════════════════════════════════════════════╗\n")
-	sb.WriteString("║                         🚨 THREAT DETECTED 🚨                                 ║\n")
+	sb.WriteString("║                                THREAT DETECTED                                ║\n")
 	sb.WriteString("╚═══════════════════════════════════════════════════════════════════════════════╝\n\n")
 
 	sb.WriteString(fmt.Sprintf("Threat Score:     %.2f / 1.00\n", t.Score))
@@ -324,7 +324,7 @@ func (t Threat) FormattedOutput() string {
 		sb.WriteString("Weak Signals (Sliding Window & Decay):\n")
 		sb.WriteString(fmt.Sprintf("  ├─ Total Score:    %.1f / 50.0 (Threshold)\n", t.WeakSignalScore))
 		if t.WeakSignalAlert {
-			sb.WriteString("  ├─ Alert Trigger:  🚨 WEAK SIGNAL EXCEEDS 50 🚨\n")
+			sb.WriteString("  ├─ Alert Trigger:  WEAK SIGNAL EXCEEDS 50\n")
 		}
 		sb.WriteString("  └─ Active Signals:\n")
 		for _, signal := range t.WeakSignals {
