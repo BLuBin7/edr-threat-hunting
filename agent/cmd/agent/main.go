@@ -302,51 +302,82 @@ func injectSimulatedAttack(eventChan chan<- monitors.Event) {
 
 	hostname, _ := os.Hostname()
 
-	log.Info("[SIMULATOR] Injecting bash parent process (PID: 99990)...")
+	log.Info("[SIMULATOR] Injecting web server parent process nginx (PID: 8888)...")
 	eventChan <- monitors.Event{
 		Type:      monitors.EventTypeProcess,
-		Timestamp: time.Now().Add(-20 * time.Second),
+		Timestamp: time.Now().Add(-35 * time.Second),
 		Hostname:  hostname,
 		Data: map[string]interface{}{
-			"pid":             99990,
-			"ppid":            99980,
-			"process_name":    "bash",
-			"commandline":     "/bin/bash",
-			"executable_path": "/bin/bash",
-			"username":        "nginx",
+			"pid":             8888,
+			"ppid":            1,
+			"process_name":    "nginx",
+			"commandline":     "nginx: worker process",
+			"executable_path": "/usr/sbin/nginx",
+			"username":        "www-data",
 			"is_elevated":     false,
-			"working_dir":     "/var/www",
+			"working_dir":     "/var/www/html",
 		},
 	}
 
 	time.Sleep(100 * time.Millisecond)
 
-	log.Info("[SIMULATOR] Injecting sh child process (PID: 99991) -> spawn shell (+20)...")
+	log.Info("[SIMULATOR] Injecting web shell spawning rare process mimikatz with privilege escalation (PID: 8889)...")
 	eventChan <- monitors.Event{
 		Type:      monitors.EventTypeProcess,
-		Timestamp: time.Now().Add(-10 * time.Second),
+		Timestamp: time.Now().Add(-30 * time.Second),
 		Hostname:  hostname,
 		Data: map[string]interface{}{
-			"pid":             99991,
-			"ppid":            99990,
-			"process_name":    "sh",
-			"commandline":     "sh -c \"echo hello\"",
-			"executable_path": "/bin/sh",
-			"username":        "nginx",
-			"is_elevated":     false,
-			"working_dir":     "/var/www",
+			"pid":             8889,
+			"ppid":            8888,
+			"process_name":    "mimikatz",
+			"commandline":     "/usr/bin/mimikatz -e privilege::debug -e sekurlsa::logonpasswords # " +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"executable_path": "/usr/bin/mimikatz",
+			"username":        "root",
+			"is_elevated":     true,
+			"working_dir":     "/tmp",
 		},
 	}
 
 	time.Sleep(100 * time.Millisecond)
 
-	log.Info("[SIMULATOR] Injecting sensitive file read on /etc/shadow -> đọc shadow (+20)...")
+	log.Info("[SIMULATOR] Injecting final obfuscated process powershell (PID: 8890)...")
+	eventChan <- monitors.Event{
+		Type:      monitors.EventTypeProcess,
+		Timestamp: time.Now().Add(-25 * time.Second),
+		Hostname:  hostname,
+		Data: map[string]interface{}{
+			"pid":             8890,
+			"ppid":            8889,
+			"process_name":    "powershell",
+			"commandline":     "powershell.exe -enc Y2F0IC9ldGMvc2hhZG93Y2F0IC9ldGMvc2hhZG93Y2F0IC9ldGMvc2hhZG93 # " +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+				"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"executable_path": "/usr/bin/powershell",
+			"username":        "root",
+			"is_elevated":     true,
+			"working_dir":     "/tmp",
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting sensitive file read on /etc/shadow by powershell -> đọc shadow (+20)...")
 	eventChan <- monitors.Event{
 		Type:          monitors.EventTypeFile,
-		Timestamp:     time.Now().Add(-5 * time.Second),
+		Timestamp:     time.Now().Add(-20 * time.Second),
 		Hostname:      hostname,
 		Data: map[string]interface{}{
-			"pid":          99991,
+			"pid":          8890,
 			"path":         "/etc/shadow",
 			"operation":    "read",
 			"is_sensitive": true,
@@ -355,14 +386,58 @@ func injectSimulatedAttack(eventChan chan<- monitors.Event) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	log.Info("[SIMULATOR] Injecting outbound network connection -> outbound tới IP lạ (+20)...")
+	log.Info("[SIMULATOR] Injecting persistence mechanism cron backdoor by powershell -> persistence (+20)...")
+	eventChan <- monitors.Event{
+		Type:          monitors.EventTypePersistence,
+		Timestamp:     time.Now().Add(-15 * time.Second),
+		Hostname:      hostname,
+		Data: map[string]interface{}{
+			"pid":       8890,
+			"type":      "cron",
+			"path":      "/etc/cron.d/persistence",
+			"operation": "create",
+		},
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	log.Info("[SIMULATOR] Injecting periodic C2 network beacons by powershell (Low Variance) -> outbound (+20)...")
+	// Beacon 1 (10s ago)
+	eventChan <- monitors.Event{
+		Type:          monitors.EventTypeNetwork,
+		Timestamp:     time.Now().Add(-10 * time.Second),
+		Hostname:      hostname,
+		Data: map[string]interface{}{
+			"pid":         8890,
+			"remote_addr": "103.181.87.20",
+			"remote_port": 4444,
+			"protocol":    "tcp",
+			"dns_query":   "attacker-c2.com",
+		},
+	}
+	time.Sleep(50 * time.Millisecond)
+	// Beacon 2 (5s ago)
+	eventChan <- monitors.Event{
+		Type:          monitors.EventTypeNetwork,
+		Timestamp:     time.Now().Add(-5 * time.Second),
+		Hostname:      hostname,
+		Data: map[string]interface{}{
+			"pid":         8890,
+			"remote_addr": "103.181.87.20",
+			"remote_port": 4444,
+			"protocol":    "tcp",
+			"dns_query":   "attacker-c2.com",
+		},
+	}
+	time.Sleep(50 * time.Millisecond)
+	// Beacon 3 (0s ago)
 	eventChan <- monitors.Event{
 		Type:          monitors.EventTypeNetwork,
 		Timestamp:     time.Now(),
 		Hostname:      hostname,
 		Data: map[string]interface{}{
-			"pid":         99991,
-			"remote_addr": "8.8.8.8",
+			"pid":         8890,
+			"remote_addr": "103.181.87.20",
 			"remote_port": 4444,
 			"protocol":    "tcp",
 			"dns_query":   "attacker-c2.com",
@@ -371,20 +446,20 @@ func injectSimulatedAttack(eventChan chan<- monitors.Event) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	log.Info("[SIMULATOR] Injecting final process execution to trigger correlation calculation...")
+	log.Info("[SIMULATOR] Injecting final triggering process execution...")
 	eventChan <- monitors.Event{
 		Type:      monitors.EventTypeProcess,
 		Timestamp: time.Now(),
 		Hostname:  hostname,
 		Data: map[string]interface{}{
-			"pid":             99992,
-			"ppid":            99991,
+			"pid":             8891,
+			"ppid":            8890,
 			"process_name":    "whoami",
-			"commandline":     "whoami",
+			"commandline":     "whoami -enc base64_data_payload_string",
 			"executable_path": "/usr/bin/whoami",
-			"username":        "nginx",
-			"is_elevated":     false,
-			"working_dir":     "/var/www",
+			"username":        "root",
+			"is_elevated":     true,
+			"working_dir":     "/tmp",
 		},
 	}
 }

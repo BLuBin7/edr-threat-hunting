@@ -257,9 +257,19 @@ func (e *Engine) handlePersistenceEvent(event monitors.Event) {
 		Timestamp: event.Timestamp,
 	}
 
-	// Try to attribute to a process (simplified - would need more tracking)
-	// For now, just log it
-	_ = persistOp
+	// Attribute to process if PID is provided
+	if pidVal, ok := event.Data["pid"]; ok {
+		var pid int
+		switch v := pidVal.(type) {
+		case int:
+			pid = v
+		case float64:
+			pid = int(v)
+		}
+		if node, exists := e.processTree[pid]; exists {
+			node.PersistenceOps = append(node.PersistenceOps, persistOp)
+		}
+	}
 }
 
 // GetAttackChains returns suspicious behavior chains detected for this event
@@ -401,9 +411,13 @@ func (e *Engine) buildAttackChain(lineage []*ProcessNode) *AttackChain {
 		chain.MitreTechniques = append(chain.MitreTechniques, "T1059 - Command and Scripting Interpreter")
 	}
 
-	// File activity
-	chain.FileModificationCount = len(lastNode.FileOps)
-	for _, fileOp := range lastNode.FileOps {
+	// File activity (aggregated across the lineage)
+	var allFileOps []FileOperation
+	for _, node := range lineage {
+		allFileOps = append(allFileOps, node.FileOps...)
+	}
+	chain.FileModificationCount = len(allFileOps)
+	for _, fileOp := range allFileOps {
 		if fileOp.IsSensitive {
 			chain.SensitiveFileAccessCount++
 		}
@@ -415,25 +429,33 @@ func (e *Engine) buildAttackChain(lineage []*ProcessNode) *AttackChain {
 	}
 
 	// Calculate mass file activity rate (files/minute)
-	if len(lastNode.FileOps) > 0 {
-		duration := time.Since(lastNode.StartTime).Minutes()
+	if len(allFileOps) > 0 {
+		duration := time.Since(lineage[0].StartTime).Minutes()
 		if duration > 0 {
-			chain.MassFileActivityRate = float32(len(lastNode.FileOps)) / float32(duration)
+			chain.MassFileActivityRate = float32(len(allFileOps)) / float32(duration)
 		}
 	}
 
-	// Network activity
-	chain.NetworkConnectionCount = len(lastNode.NetConnections)
-	chain.BeaconingScore = e.calculateBeaconingScore(lastNode.NetConnections)
-	chain.HasSuspiciousDNS = e.hasSuspiciousDNS(lastNode.NetConnections)
+	// Network activity (aggregated across the lineage)
+	var allNetConns []NetworkConnection
+	for _, node := range lineage {
+		allNetConns = append(allNetConns, node.NetConnections...)
+	}
+	chain.NetworkConnectionCount = len(allNetConns)
+	chain.BeaconingScore = e.calculateBeaconingScore(allNetConns)
+	chain.HasSuspiciousDNS = e.hasSuspiciousDNS(allNetConns)
 
 	if chain.NetworkConnectionCount > 0 {
 		chain.MitreTactics = append(chain.MitreTactics, "TA0011 - Command and Control")
 	}
 
-	// Persistence activity
-	chain.HasPersistenceMechanism = len(lastNode.PersistenceOps) > 0
-	for _, persistOp := range lastNode.PersistenceOps {
+	// Persistence activity (aggregated across the lineage)
+	var allPersistOps []PersistenceOperation
+	for _, node := range lineage {
+		allPersistOps = append(allPersistOps, node.PersistenceOps...)
+	}
+	chain.HasPersistenceMechanism = len(allPersistOps) > 0
+	for _, persistOp := range allPersistOps {
 		if persistOp.Type == "cron" {
 			chain.CronJobCount++
 		} else if persistOp.Type == "systemd_service" {
@@ -456,7 +478,7 @@ func (e *Engine) calculateProcessRarity(node *ProcessNode) float32 {
 	score := float32(0.0)
 
 	// Rare process names
-	rareProcesses := []string{"mimikatz", "procdump", "psexec", "wce", "pwdump"}
+	rareProcesses := []string{"mimikatz", "procdump", "psexec", "wce", "pwdump", "powershell"}
 	for _, rare := range rareProcesses {
 		if node.ProcessName == rare {
 			score += 0.5
