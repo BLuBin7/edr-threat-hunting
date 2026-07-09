@@ -1,0 +1,17 @@
+name: "Detect Mimikatz Execution"
+description: "Detects the execution of Mimikatz or related credential dumping tools in the process command line."
+category: "credential_access"
+severity: "critical"
+enabled: true
+version: "1.0.0"
+author: "Antigravity"
+mitre_tactics:
+  - "TA0006"
+mitre_techniques:
+  - "T1003"
+conditions:
+  - field: "commandline"
+    operator: "contains"
+    value: "mimikatz"
+action: "alert"
+score_modifier: 0.5

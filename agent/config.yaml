@@ -44,6 +44,10 @@ ml:
   enable_inference: true
   fallback_on_error: true
 
+rules:
+  enabled: true
+  rules_dir: agent/rules
+
 metrics:
   enabled: true
   port: 9090
